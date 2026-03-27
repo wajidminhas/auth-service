@@ -1,0 +1,22 @@
+# Virtual environment
+.venv/
+venv/
+
+# Environment variables — never push this!
+.env
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# uv
+.uv/
+
+# IDE files
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
