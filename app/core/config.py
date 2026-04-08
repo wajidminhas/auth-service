@@ -23,6 +23,8 @@ class Settings(BaseSettings):
 
     # Algorithm used to encode JWT tokens — HS256 is industry standard
     ALGORITHM: str = "HS256"
+    
+    OTP_EXPIRE_MINUTES: int = 15
 
     # How long token stays valid — 30 minutes by default
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30

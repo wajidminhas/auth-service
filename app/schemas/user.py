@@ -1,5 +1,3 @@
-
-
 # app/schemas/user.py
 
 from typing import Optional
@@ -7,43 +5,65 @@ from datetime import datetime
 from sqlmodel import SQLModel
 
 
-# ─── Register Schema ──────────────────────────────────────────────────────────
+# ─── Register Schema ──────────────────────────────────────────────
 class UserRegister(SQLModel):
-    # Username must be provided — no default value
     username: str
     email: str
     password: str
 
 
-# ─── Login Schema ─────────────────────────────────────────────────────────────
+# ─── Login Schema ─────────────────────────────────────────────────
 class UserLogin(SQLModel):
-    email: str # Email to identify which user is logging in
-    password: str # Plain password to verify against hashed password in database
+    email: str
+    password: str
 
 
-
-# ─── User Response Schema ─────────────────────────────────────────────────────
+# ─── User Response Schema ─────────────────────────────────────────
+# What we send back to client — never includes password
 class UserResponse(SQLModel):
-   
-    id: int # Send back user id
-    username: str  # Send back username
-    email: str  # Send back email
-    is_active: bool  # Send back account status
-    created_at: datetime # Send back registration time
-    
+    id: int
+    username: str
+    email: str
+    full_name: Optional[str] = None
+    phone_number: Optional[str] = None
+    is_active: bool
+    created_at: datetime
 
 
-# ─── Token Schema ─────────────────────────────────────────────────────────────
+# ─── Token Schema ─────────────────────────────────────────────────
 class TokenResponse(SQLModel):
-
-    access_token: str  # The JWT token client will use for future requests
-    # Always 'bearer' — this is the standard token type
-    # Client sends it as: Authorization: Bearer <token>
+    access_token: str
     token_type: str = "bearer"
 
 
-# ─── Token Data Schema ────────────────────────────────────────────────────────
+# ─── Token Data Schema ────────────────────────────────────────────
 class TokenData(SQLModel):
+    email: Optional[str] = None
 
-    email: Optional[str] = None     # Email extracted from decoded JWT token
-    
+
+# ─── Change Password Schema ───────────────────────────────────────
+class ChangePasswordRequest(SQLModel):
+    current_password: str
+    new_password: str
+    confirm_password: str
+
+
+# ─── Forgot Password Schema ───────────────────────────────────────
+class ForgotPasswordRequest(SQLModel):
+    email: str
+
+
+# ─── Reset Password Schema ────────────────────────────────────────
+class ResetPasswordRequest(SQLModel):
+    email: str
+    otp: str
+    new_password: str
+    confirm_password: str
+
+
+# ─── Update Profile Schema ────────────────────────────────────────
+# All fields optional — user updates only what they want
+class UpdateProfileRequest(SQLModel):
+    username: Optional[str] = None
+    full_name: Optional[str] = None
+    phone_number: Optional[str] = None
