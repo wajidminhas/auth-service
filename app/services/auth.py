@@ -1,243 +1,125 @@
-
-
 # app/services/auth.py
 
+import secrets
 import logging
+from datetime import datetime, timedelta
 from sqlmodel import Session, select
 from fastapi import HTTPException, status
 
 from app.models.user import User
-from app.schemas.user import UserRegister, UserLogin, TokenResponse
+from app.schemas.user import (
+    UserRegister,
+    UserLogin,
+    TokenResponse,
+    ChangePasswordRequest,
+    ForgotPasswordRequest,
+    ResetPasswordRequest,
+    UpdateProfileRequest
+)
 from app.core.security import (
     hash_password,
     verify_password,
-    create_access_token
+    create_access_token,
+    decode_access_token
 )
+from app.core.config import settings
 from app.services.kafka import (
     publish_user_registered,
-    publish_user_logged_in
+    publish_user_logged_in,
+    publish_user_logged_out,
+    publish_user_deactivated,
+    publish_password_changed,
+    publish_password_reset_requested,
+    publish_password_reset_completed,
+    publish_token_refreshed,
+    publish_profile_updated
 )
 
 logger = logging.getLogger(__name__)
 
 
+# ─── Helper ───────────────────────────────────────────────────────
+def get_user_by_email(email: str, db: Session):
+    return db.exec(select(User).where(User.email == email)).first()
+
+def get_user_by_username(username: str, db: Session):
+    return db.exec(select(User).where(User.username == username)).first()
+
+
+# ─── Register ─────────────────────────────────────────────────────
 def register_user(user_data: UserRegister, db: Session) -> User:
-    """
-    Handles complete user registration flow.
 
-    Flow:
-        Receive user data
-            ↓
-        Check email not already registered
-            ↓
-        Hash plain password
-            ↓
-        Save new user to PostgreSQL
-            ↓
-        Publish event to Kafka
-            ↓
-        Return created user
-    """
-
-    # ─── Step 1: Check if email already exists ────────────────────
-    # select(User) builds a SQL SELECT query
-    # where() adds WHERE clause
-    # This translates to:
-    # SELECT * FROM user WHERE email = 'john@example.com' LIMIT 1
-    existing_user = db.exec(
-        select(User).where(User.email == user_data.email)
-    ).first()
-
-    if existing_user:
-        # Raise HTTP 400 Bad Request — email already taken
-        # HTTPException automatically returns proper error response
+    # Check email not already taken
+    if get_user_by_email(user_data.email, db):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Email already registered"
         )
 
-    # ─── Step 2: Check if username already exists ─────────────────
-    existing_username = db.exec(
-        select(User).where(User.username == user_data.username)
-    ).first()
-
-    if existing_username:
+    # Check username not already taken
+    if get_user_by_username(user_data.username, db):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Username already taken"
         )
 
-    # ─── Step 3: Hash the password ────────────────────────────────
-    # NEVER save plain password to database
-    # hash_password() from security.py converts it to bcrypt hash
-    # Example:
-    #   plain:  "mypassword123"
-    #   hashed: "$2b$12$KIXsV7rB..."
-    hashed = hash_password(user_data.password)
-
-    # ─── Step 4: Create User object ───────────────────────────────
-    # This creates a User instance but does NOT save to database yet
+    # Create and save new user
     new_user = User(
         username=user_data.username,
         email=user_data.email,
-        hashed_password=hashed
+        hashed_password=hash_password(user_data.password)
     )
-
-    # ─── Step 5: Save to PostgreSQL ───────────────────────────────
-    # add() stages the user for insertion
     db.add(new_user)
-
-    # commit() executes the INSERT query and saves to database
-    # After commit() new_user.id is automatically populated
-    # by PostgreSQL auto increment
     db.commit()
-
-    # refresh() reloads user data from database
-    # This ensures we have latest data including auto generated id
     db.refresh(new_user)
 
     logger.info(f"New user registered: {new_user.email}")
-
-    # ─── Step 6: Publish Kafka Event ──────────────────────────────
-    # Notify other services that new user registered
-    # This is async — does not block registration flow
-    # Even if Kafka is down user is already saved to database
-    publish_user_registered(
-        user_id=new_user.id,
-        email=new_user.email,
-        username=new_user.username
-    )
+    publish_user_registered(new_user.id, new_user.email, new_user.username)
 
     return new_user
 
 
+# ─── Login ────────────────────────────────────────────────────────
 def login_user(user_data: UserLogin, db: Session) -> TokenResponse:
-    """
-    Handles complete user login flow.
 
-    Flow:
-        Receive email and password
-            ↓
-        Find user by email in database
-            ↓
-        Verify password against hash
-            ↓
-        Check account is active
-            ↓
-        Generate JWT token
-            ↓
-        Publish login event to Kafka
-            ↓
-        Return token to client
-    """
+    user = get_user_by_email(user_data.email, db)
 
-    # ─── Step 1: Find user by email ───────────────────────────────
-    # Search database for user with this email
-    user = db.exec(
-        select(User).where(User.email == user_data.email)
-    ).first()
-
-    # If no user found — return 401 Unauthorized
-    # We say "invalid credentials" not "email not found"
-    # This is intentional — never reveal if email exists
-    # Security best practice — prevents email enumeration attacks
-    if not user:
+    # Never reveal if email exists or not — security best practice
+    if not user or not verify_password(user_data.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials"
         )
 
-    # ─── Step 2: Verify password ──────────────────────────────────
-    # verify_password() compares plain password with stored hash
-    # Returns True if match, False if not
-    password_valid = verify_password(
-        user_data.password,
-        user.hashed_password
-    )
-
-    if not password_valid:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid credentials"
-        )
-
-    # ─── Step 3: Check account is active ──────────────────────────
-    # Deactivated users cannot login
     if not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Account is deactivated. Please contact support."
+            detail="Account is deactivated"
         )
 
-    # ─── Step 4: Generate JWT token ───────────────────────────────
-    # Create token with user email as subject
-    # 'sub' is standard JWT claim meaning subject
-    # Token expires based on settings.ACCESS_TOKEN_EXPIRE_MINUTES
-    access_token = create_access_token(
-        data={"sub": user.email}
-    )
+    token = create_access_token(data={"sub": user.email})
 
     logger.info(f"User logged in: {user.email}")
+    publish_user_logged_in(user.id, user.email)
 
-    # ─── Step 5: Publish Kafka Event ──────────────────────────────
-    # Notify other services that user logged in
-    # Analytics service can track login patterns
-    # Security service can detect suspicious logins
-    publish_user_logged_in(
-        user_id=user.id,
-        email=user.email
-    )
-
-    # ─── Step 6: Return token ─────────────────────────────────────
-    # TokenResponse schema shapes this response
-    # Client receives:
-    # {
-    #     "access_token": "eyJhbGci...",
-    #     "token_type": "bearer"
-    # }
-    return TokenResponse(
-        access_token=access_token,
-        token_type="bearer"
-    )
+    return TokenResponse(access_token=token, token_type="bearer")
 
 
+# ─── Get Current User ─────────────────────────────────────────────
 def get_current_user(token: str, db: Session) -> User:
-    """
-    Validates JWT token and returns current logged in user.
 
-    This is called on every protected route.
-    Client sends token in header:
-        Authorization: Bearer eyJhbGci...
-
-    Flow:
-        Receive token
-            ↓
-        Decode token and extract email
-            ↓
-        Find user by email in database
-            ↓
-        Return user if found and active
-    """
-    from app.core.security import decode_access_token
-
-    # Decode token and get email
     email = decode_access_token(token)
 
-    # If email is None — token is invalid or expired
     if email is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",
-            # This header tells client to authenticate again
             headers={"WWW-Authenticate": "Bearer"}
         )
 
-    # Find user by email from token
-    user = db.exec(
-        select(User).where(User.email == email)
-    ).first()
+    user = get_user_by_email(email, db)
 
-    if user is None:
+    if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found"
@@ -250,3 +132,217 @@ def get_current_user(token: str, db: Session) -> User:
         )
 
     return user
+
+
+# ─── Change Password ──────────────────────────────────────────────
+def change_password(
+    data: ChangePasswordRequest,
+    current_user: User,
+    db: Session
+) -> dict:
+
+    # Verify current password is correct
+    if not verify_password(data.current_password, current_user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current password is incorrect"
+        )
+
+    # New password and confirm must match
+    if data.new_password != data.confirm_password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="New password and confirm password do not match"
+        )
+
+    # New password must be different from current
+    if verify_password(data.new_password, current_user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="New password must be different from current password"
+        )
+
+    # Minimum 8 characters
+    if len(data.new_password) < 8:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Password must be at least 8 characters"
+        )
+
+    # Hash and save new password
+    current_user.hashed_password = hash_password(data.new_password)
+    current_user.updated_at = datetime.utcnow()
+    db.add(current_user)
+    db.commit()
+
+    logger.info(f"Password changed: {current_user.email}")
+    publish_password_changed(current_user.id, current_user.email)
+
+    return {"message": "Password changed successfully"}
+
+
+# ─── Forgot Password ──────────────────────────────────────────────
+def forgot_password(data: ForgotPasswordRequest, db: Session) -> dict:
+
+    user = get_user_by_email(data.email, db)
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Email not found"
+        )
+
+    # Generate secure 6 digit OTP
+    # secrets module is more secure than random for OTPs
+    otp = str(secrets.randbelow(900000) + 100000)
+
+    # Store OTP and expiry in database
+    user.password_reset_otp = otp
+    user.otp_expires_at = datetime.utcnow() + timedelta(
+        minutes=settings.OTP_EXPIRE_MINUTES
+    )
+    user.updated_at = datetime.utcnow()
+    db.add(user)
+    db.commit()
+
+    logger.info(f"Password reset OTP generated: {user.email}")
+    publish_password_reset_requested(user.id, user.email)
+
+    # In production — send OTP via email
+    # For development — return OTP in response
+    return {
+        "message": "Password reset OTP sent to your email",
+        "otp": otp  # Remove this in production!
+    }
+
+
+# ─── Reset Password ───────────────────────────────────────────────
+def reset_password(data: ResetPasswordRequest, db: Session) -> dict:
+
+    user = get_user_by_email(data.email, db)
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Email not found"
+        )
+
+    # Check OTP exists and matches
+    if not user.password_reset_otp or user.password_reset_otp != data.otp:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid OTP"
+        )
+
+    # Check OTP not expired
+    if datetime.utcnow() > user.otp_expires_at:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="OTP has expired. Please request a new one."
+        )
+
+    # Passwords must match
+    if data.new_password != data.confirm_password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Passwords do not match"
+        )
+
+    # Minimum 8 characters
+    if len(data.new_password) < 8:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Password must be at least 8 characters"
+        )
+
+    # Save new password and clear OTP
+    user.hashed_password = hash_password(data.new_password)
+    user.password_reset_otp = None
+    user.otp_expires_at = None
+    user.updated_at = datetime.utcnow()
+    db.add(user)
+    db.commit()
+
+    logger.info(f"Password reset completed: {user.email}")
+    publish_password_reset_completed(user.id, user.email)
+
+    return {"message": "Password reset successfully"}
+
+
+# ─── Refresh Token ────────────────────────────────────────────────
+def refresh_token(current_user: User) -> TokenResponse:
+
+    # Generate fresh token for already authenticated user
+    new_token = create_access_token(data={"sub": current_user.email})
+
+    logger.info(f"Token refreshed: {current_user.email}")
+    publish_token_refreshed(current_user.id, current_user.email)
+
+    return TokenResponse(access_token=new_token, token_type="bearer")
+
+
+# ─── Logout ───────────────────────────────────────────────────────
+def logout(current_user: User) -> dict:
+
+    # JWT is stateless — actual token deletion happens client side
+    # We just publish event so other services know user logged out
+    logger.info(f"User logged out: {current_user.email}")
+    publish_user_logged_out(current_user.id, current_user.email)
+
+    return {"message": "Logged out successfully"}
+
+
+# ─── Update Profile ───────────────────────────────────────────────
+def update_profile(
+    data: UpdateProfileRequest,
+    current_user: User,
+    db: Session
+) -> User:
+
+    # Check new username not taken by another user
+    if data.username and data.username != current_user.username:
+        existing = get_user_by_username(data.username, db)
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Username already taken"
+            )
+        current_user.username = data.username
+
+    # Validate phone number format — 10 to 15 digits
+    if data.phone_number:
+        phone = data.phone_number.replace("+", "").replace("-", "").replace(" ", "")
+        if not phone.isdigit() or not (10 <= len(phone) <= 15):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Invalid phone number format"
+            )
+        current_user.phone_number = data.phone_number
+
+    # Update full name if provided
+    if data.full_name:
+        current_user.full_name = data.full_name
+
+    current_user.updated_at = datetime.utcnow()
+    db.add(current_user)
+    db.commit()
+    db.refresh(current_user)
+
+    logger.info(f"Profile updated: {current_user.email}")
+    publish_profile_updated(current_user.id, current_user.email)
+
+    return current_user
+
+
+# ─── Deactivate Account ───────────────────────────────────────────
+def deactivate_account(current_user: User, db: Session) -> dict:
+
+    current_user.is_active = False
+    current_user.updated_at = datetime.utcnow()
+    db.add(current_user)
+    db.commit()
+
+    logger.info(f"Account deactivated: {current_user.email}")
+    publish_user_deactivated(current_user.id, current_user.email)
+
+    return {"message": "Account deactivated successfully"}
