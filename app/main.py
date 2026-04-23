@@ -5,7 +5,7 @@
 import logging
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
-
+from app.services.redis import RedisClient
 from app.database import create_db_and_tables
 from app.routes.auth import router
 from app.services.kafka import KafkaEventProducer
@@ -25,41 +25,27 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-# ─── Lifespan ─────────────────────────────────────────────────────
-# Lifespan handles startup and shutdown events
-# Everything before yield runs on startup
-# Everything after yield runs on shutdown
+
+# Update lifespan
 @asynccontextmanager
 async def lifespan(app: FastAPI):
 
-    # ── Startup ──────────────────────────────────────────────────
+    # Startup
     logger.info(f"Starting {settings.APP_NAME}...")
-
-    # Create all database tables
-    # SQLModel reads all models with table=True
-    # and creates matching tables in PostgreSQL
-    # If tables already exist — does nothing
     create_db_and_tables()
     logger.info("Database tables created successfully")
-
-    # Initialize Kafka producer connection
-    # This creates connection once at startup
-    # All requests reuse this same connection
     KafkaEventProducer.get_producer()
     logger.info("Kafka producer initialized")
-
+    RedisClient.get_client()          # ← add this
+    logger.info("Redis initialized")  # ← add this
     logger.info(f"{settings.APP_NAME} started successfully!")
 
-    yield  # Application runs here
+    yield
 
-    # ── Shutdown ─────────────────────────────────────────────────
+    # Shutdown
     logger.info(f"Shutting down {settings.APP_NAME}...")
-
-    # Close Kafka connection gracefully
-    # Flushes remaining messages before closing
     KafkaEventProducer.close()
-    logger.info("Kafka producer closed")
-
+    RedisClient.close()               # ← add this
     logger.info(f"{settings.APP_NAME} shutdown complete")
 
 

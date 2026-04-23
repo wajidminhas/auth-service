@@ -5,6 +5,8 @@ import logging
 from datetime import datetime, timedelta
 from sqlmodel import Session, select
 from fastapi import HTTPException, status
+from app.services.redis import blacklist_token, is_token_blacklisted
+from jose import jwt
 
 from app.models.user import User
 from app.schemas.user import (
@@ -82,9 +84,15 @@ def register_user(user_data: UserRegister, db: Session) -> User:
 # ─── Login ────────────────────────────────────────────────────────
 def login_user(user_data: UserLogin, db: Session) -> TokenResponse:
 
-    user = get_user_by_email(user_data.email, db)
+    # Try to find user by email first
+    # Then by username if email not found
+    user = get_user_by_email(user_data.identifier, db)
 
-    # Never reveal if email exists or not — security best practice
+    if not user:
+        # Not found by email — try username
+        user = get_user_by_username(user_data.identifier, db)
+
+    # Never reveal if email or username exists — security best practice
     if not user or not verify_password(user_data.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -107,6 +115,15 @@ def login_user(user_data: UserLogin, db: Session) -> TokenResponse:
 
 # ─── Get Current User ─────────────────────────────────────────────
 def get_current_user(token: str, db: Session) -> User:
+
+    # Check if token is blacklisted first
+    # This handles logout case — token still valid but blacklisted
+    if is_token_blacklisted(token):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token has been invalidated. Please login again.",
+            headers={"WWW-Authenticate": "Bearer"}
+        )
 
     email = decode_access_token(token)
 
@@ -198,7 +215,7 @@ def forgot_password(data: ForgotPasswordRequest, db: Session) -> dict:
 
     # Store OTP and expiry in database
     user.password_reset_otp = otp
-    user.otp_expires_at = datetime.utcnow() + timedelta(
+    user.otp_expires_at = datetime.timezone() + timedelta(
         minutes=settings.OTP_EXPIRE_MINUTES
     )
     user.updated_at = datetime.utcnow()
@@ -282,10 +299,27 @@ def refresh_token(current_user: User) -> TokenResponse:
 
 
 # ─── Logout ───────────────────────────────────────────────────────
-def logout(current_user: User) -> dict:
+def logout(current_user: User, token: str) -> dict:
 
-    # JWT is stateless — actual token deletion happens client side
-    # We just publish event so other services know user logged out
+    # Decode token to get expiry time
+    try:
+        payload = jwt.decode(
+            token,
+            settings.SECRET_KEY,
+            algorithms=[settings.ALGORITHM]
+        )
+        # Calculate remaining seconds until token expires
+        exp = payload.get("exp")
+        if exp:
+            from datetime import timezone
+            now = datetime.now(timezone.utc).timestamp()
+            expires_in = int(exp - now)
+            if expires_in > 0:
+                # Blacklist token for remaining lifetime
+                blacklist_token(token, expires_in)
+    except Exception:
+        pass
+
     logger.info(f"User logged out: {current_user.email}")
     publish_user_logged_out(current_user.id, current_user.email)
 
@@ -335,12 +369,42 @@ def update_profile(
 
 
 # ─── Deactivate Account ───────────────────────────────────────────
-def deactivate_account(current_user: User, db: Session) -> dict:
+def deactivate_account(
+    current_user: User,
+    token: str,
+    db: Session
+) -> dict:
 
+    # Check account is not already deactivated
+    if not current_user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Account is already deactivated"
+        )
+
+    # Deactivate account
     current_user.is_active = False
     current_user.updated_at = datetime.utcnow()
     db.add(current_user)
     db.commit()
+
+    # Also blacklist current token
+    # So even if someone has the token they cannot use it
+    try:
+        payload = jwt.decode(
+            token,
+            settings.SECRET_KEY,
+            algorithms=[settings.ALGORITHM]
+        )
+        exp = payload.get("exp")
+        if exp:
+            from datetime import timezone
+            now = datetime.now(timezone.utc).timestamp()
+            expires_in = int(exp - now)
+            if expires_in > 0:
+                blacklist_token(token, expires_in)
+    except Exception:
+        pass
 
     logger.info(f"Account deactivated: {current_user.email}")
     publish_user_deactivated(current_user.id, current_user.email)

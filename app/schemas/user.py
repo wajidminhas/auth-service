@@ -13,8 +13,11 @@ class UserRegister(SQLModel):
 
 
 # ─── Login Schema ─────────────────────────────────────────────────
+# Login with either email or username
 class UserLogin(SQLModel):
-    email: str
+    # Client can send either email or username
+    # Other field will be None
+    identifier: str  # email or username
     password: str
 
 

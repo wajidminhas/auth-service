@@ -39,6 +39,9 @@ class Settings(BaseSettings):
     # ─── App Settings ─────────────────────────────────────────────
     # Name of our application
     APP_NAME: str = "Auth Service"
+    
+    # Add inside Settings class
+    REDIS_URL: str = "redis://redis:6379"
 
     class Config:
         # Tell pydantic where to find our environment variables

@@ -1,13 +1,14 @@
 # app/routes/auth.py
 
 import logging
-from fastapi import APIRouter, Depends, status
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi import APIRouter, Depends, status, HTTPException
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlmodel import Session
 
 from app.database import get_db
 from app.schemas.user import (
     UserRegister,
+    UserLogin,
     UserResponse,
     TokenResponse,
     ChangePasswordRequest,
@@ -33,16 +34,20 @@ logger = logging.getLogger(__name__)
 # ─── Router Setup ─────────────────────────────────────────────────
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
-# ─── OAuth2 Scheme ────────────────────────────────────────────────
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
+# ─── HTTP Bearer Scheme ───────────────────────────────────────────
+# HTTPBearer is cleaner than OAuth2PasswordBearer
+# No client_id or client_secret fields in Swagger
+# Just a clean Bearer token input
+bearer_scheme = HTTPBearer()
 
 
 # ─── Reusable Auth Dependency ─────────────────────────────────────
 def get_authenticated_user(
-    token: str = Depends(oauth2_scheme),
+    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
     db: Session = Depends(get_db)
 ):
-    return get_current_user(token=token, db=db)
+    # Extract token from Authorization: Bearer <token>
+    return get_current_user(token=credentials.credentials, db=db)
 
 
 # ═════════════════════════════════════════════════════════════════
@@ -66,17 +71,12 @@ def register(
     "/login",
     response_model=TokenResponse,
     status_code=status.HTTP_200_OK,
-    summary="Login user"
+    summary="Login with email or username"
 )
 def login(
-    form_data: OAuth2PasswordRequestForm = Depends(),
+    user_data: UserLogin,
     db: Session = Depends(get_db)
 ):
-    from app.schemas.user import UserLogin
-    user_data = UserLogin(
-        email=form_data.username,
-        password=form_data.password
-    )
     return login_user(user_data=user_data, db=db)
 
 
@@ -177,9 +177,11 @@ def refresh_token_route(
     summary="Logout user"
 )
 def logout_route(
+    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
     current_user=Depends(get_authenticated_user)
 ):
-    return logout(current_user=current_user)
+    # Pass actual token to logout for blacklisting
+    return logout(current_user=current_user, token=credentials.credentials)
 
 
 @router.put(
@@ -188,7 +190,13 @@ def logout_route(
     summary="Deactivate account"
 )
 def deactivate_route(
+    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
     current_user=Depends(get_authenticated_user),
     db: Session = Depends(get_db)
 ):
-    return deactivate_account(current_user=current_user, db=db)
+    # Pass actual token for blacklisting
+    return deactivate_account(
+        current_user=current_user,
+        token=credentials.credentials,
+        db=db
+    )
