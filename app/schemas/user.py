@@ -5,25 +5,21 @@ from datetime import datetime
 from sqlmodel import SQLModel
 
 
-# ─── Register Schema ──────────────────────────────────────────────
 class UserRegister(SQLModel):
+    """Registration request payload."""
     username: str
     email: str
     password: str
 
 
-# ─── Login Schema ─────────────────────────────────────────────────
-# Login with either email or username
 class UserLogin(SQLModel):
-    # Client can send either email or username
-    # Other field will be None
-    identifier: str  # email or username
+    """Login request — accepts email or username as identifier."""
+    identifier: str
     password: str
 
 
-# ─── User Response Schema ─────────────────────────────────────────
-# What we send back to client — never includes password
 class UserResponse(SQLModel):
+    """Public user profile — never exposes password."""
     id: int
     username: str
     email: str
@@ -33,40 +29,39 @@ class UserResponse(SQLModel):
     created_at: datetime
 
 
-# ─── Token Schema ─────────────────────────────────────────────────
 class TokenResponse(SQLModel):
+    """JWT token response after successful login."""
     access_token: str
     token_type: str = "bearer"
 
 
-# ─── Token Data Schema ────────────────────────────────────────────
 class TokenData(SQLModel):
+    """Data extracted from decoded JWT token."""
     email: Optional[str] = None
 
 
-# ─── Change Password Schema ───────────────────────────────────────
 class ChangePasswordRequest(SQLModel):
+    """Change password request — requires current password verification."""
     current_password: str
     new_password: str
     confirm_password: str
 
 
-# ─── Forgot Password Schema ───────────────────────────────────────
 class ForgotPasswordRequest(SQLModel):
+    """Forgot password — triggers OTP generation."""
     email: str
 
 
-# ─── Reset Password Schema ────────────────────────────────────────
 class ResetPasswordRequest(SQLModel):
+    """Reset password using OTP received via email."""
     email: str
     otp: str
     new_password: str
     confirm_password: str
 
 
-# ─── Update Profile Schema ────────────────────────────────────────
-# All fields optional — user updates only what they want
 class UpdateProfileRequest(SQLModel):
+    """Partial profile update — all fields optional."""
     username: Optional[str] = None
     full_name: Optional[str] = None
     phone_number: Optional[str] = None

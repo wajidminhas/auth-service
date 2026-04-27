@@ -1,6 +1,6 @@
 # app/core/security.py
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from jose import JWTError, jwt
 from passlib.context import CryptContext
@@ -25,7 +25,7 @@ def create_access_token(
 ) -> str:
     """Generate signed JWT token with expiry."""
     to_encode = data.copy()
-    expire = datetime.utcnow() + (
+    expire = datetime.now(timezone.utc) + (
         expires_delta or
         timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     )
