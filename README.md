@@ -1,67 +1,254 @@
 # 🔐 Auth Service
 
-> Production-ready Authentication Microservice built with FastAPI, Apache Kafka, PostgreSQL and Docker.
+A scalable authentication and authorization microservice built with Python and FastAPI.
 
-[![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.109+-green.svg)](https://fastapi.tiangolo.com)
-[![Docker](https://img.shields.io/badge/Docker-✓-2496ED.svg)](https://www.docker.com)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15+-336791.svg)](https://www.postgresql.org)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+This service provides secure user authentication, JWT token management, user registration, login functionality, and role-based access control for modern applications and microservices architectures.
 
-## 📋 Overview
+---
 
-A secure, scalable authentication microservice designed for event-driven architectures. This service handles user registration, login, token management, and emits authentication events via Apache Kafka for integration with other microservices.
+## 🚀 Features
 
-### ✨ Features
+* User Registration & Login
+* JWT Authentication
+* Access & Refresh Tokens
+* Password Hashing
+* Role-Based Authorization
+* FastAPI Backend
+* PostgreSQL Database
+* Docker Support
+* Environment-Based Configuration
+* RESTful API Architecture
+* Swagger API Documentation
+* Scalable Microservice Structure
 
-- 🔑 **JWT Authentication**: Stateless token-based authentication with refresh token support
-- 🔒 **Secure Password Handling**: bcrypt password hashing via `passlib`
-- 📨 **Event-Driven Architecture**: Publishes auth events (user registered, logged in, token refreshed) to Kafka topics
-- 🐳 **Docker-Ready**: Fully containerized with multi-stage Dockerfile and docker-compose orchestration
-- 🧪 **Test Coverage**: Comprehensive pytest suite with security-focused test cases
-- ⚙️ **SQLModel ORM**: Type-safe database interactions with PostgreSQL
-- 📦 **uv Package Manager**: Fast, modern Python dependency management
-- 🛡️ **Production Hardened**: Environment-based configuration, CORS setup, and security middleware
+---
 
-## 🏗️ Architecture
+## 🛠️ Tech Stack
 
+* Python
+* FastAPI
+* PostgreSQL
+* SQLAlchemy / SQLModel
+* Docker
+* JWT
+* Pydantic
+* Alembic
+* UV Package Manager
 
+---
 
-
-## 🚀 Quick Start
-
-### Prerequisites
-
-- Docker & Docker Compose
-- Python 3.11+ (for local development)
-- `uv` package manager: `curl -LsSf https://astral.sh/uv/install.sh | sh`
-
-### Run with Docker Compose (Recommended)
+## 📂 Project Structure
 
 ```bash
-# Clone the repository
+auth-service/
+│
+├── app/
+│   ├── api/
+│   ├── core/
+│   ├── models/
+│   ├── schemas/
+│   ├── services/
+│   ├── db/
+│   └── main.py
+│
+├── tests/
+├── alembic/
+├── docker/
+├── .env
+├── docker-compose.yml
+├── pyproject.toml
+└── README.md
+```
+
+---
+
+## ⚙️ Installation
+
+### 1️⃣ Clone the Repository
+
+```bash
 git clone https://github.com/wajidminhas/auth-service.git
 cd auth-service
+```
 
-# Start all services (app, postgres, kafka, zookeeper)
-docker-compose up --build
+---
 
-# Service will be available at: http://localhost:8000
-# API Docs: http://localhost:8000/docs
+### 2️⃣ Install UV
 
-# Install dependencies with uv
+#### Linux / Mac
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+#### Windows
+
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
+
+---
+
+### 3️⃣ Create Virtual Environment
+
+```bash
+uv venv
+```
+
+Activate environment:
+
+#### Linux / Mac
+
+```bash
+source .venv/bin/activate
+```
+
+#### Windows
+
+```bash
+.venv\Scripts\activate
+```
+
+---
+
+### 4️⃣ Install Dependencies
+
+Using UV:
+
+```bash
 uv sync
+```
 
-# Set environment variables (copy example)
-cp .env.example .env
-# Edit .env with your configuration
+---
 
-# Run database migrations (if applicable)
-# uv run alembic upgrade head
+## 🔑 Environment Variables
 
-# Start the development server
-uv run fastapi dev main.py
+Create a `.env` file in the root directory.
 
+Example:
 
+```env
+DATABASE_URL=postgresql://postgres:password@localhost:5432/authdb
 
+SECRET_KEY=your_secret_key
 
+ALGORITHM=HS256
+
+ACCESS_TOKEN_EXPIRE_MINUTES=30
+```
+
+---
+
+## 🐳 Docker Setup
+
+Run with Docker Compose:
+
+```bash
+docker-compose up --build
+```
+
+---
+
+## ▶️ Run the Application
+
+```bash
+uvicorn app.main:app --reload
+```
+
+Application will run on:
+
+```bash
+http://127.0.0.1:8000
+```
+
+---
+
+## 📘 API Documentation
+
+After starting the server:
+
+### Swagger UI
+
+```bash
+http://127.0.0.1:8000/docs
+```
+
+### ReDoc
+
+```bash
+http://127.0.0.1:8000/redoc
+```
+
+---
+
+## 🔐 Authentication Flow
+
+1. User registers
+2. User logs in
+3. Server generates JWT token
+4. Protected routes require Bearer Token
+5. Refresh token used for session renewal
+
+---
+
+## 📌 Example Endpoints
+
+| Method | Endpoint    | Description            |
+| ------ | ----------- | ---------------------- |
+| POST   | `/register` | Register new user      |
+| POST   | `/login`    | Login user             |
+| GET    | `/profile`  | Get authenticated user |
+| POST   | `/refresh`  | Refresh access token   |
+
+---
+
+## 🧪 Running Tests
+
+```bash
+pytest
+```
+
+---
+
+## 📈 Future Improvements
+
+* OAuth2 Integration
+* Email Verification
+* Multi-Factor Authentication
+* Redis Caching
+* Kafka Event Streaming
+* API Gateway Integration
+* Rate Limiting
+* Audit Logging
+
+---
+
+## 🤝 Contributing
+
+Contributions are welcome.
+
+1. Fork the repository
+2. Create your feature branch
+3. Commit your changes
+4. Push to the branch
+5. Open a Pull Request
+
+---
+
+## 📄 License
+
+This project is licensed under the MIT License.
+
+---
+
+## 👨‍💻 Author
+
+### Wajid Shabbir
+
+GitHub: [https://github.com/wajidminhas](https://github.com/wajidminhas)
+
+---
+
+## ⭐ Support
+
+If you like this project, give it a ⭐ on GitHub.
