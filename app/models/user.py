@@ -2,7 +2,8 @@
 
 from typing import Optional
 from datetime import datetime, timezone
-from sqlmodel import Field, SQLModel
+from sqlmodel import Field, SQLModel, Relationship
+from .refresh_token import RefreshToken
 
 
 class User(SQLModel, table=True):
@@ -31,3 +32,6 @@ class User(SQLModel, table=True):
     # Timestamps — set automatically, never hardcoded anywhere
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: Optional[datetime] = Field(default=None)
+    
+    
+    refresh_tokens: list["RefreshToken"] = Relationship(back_populates="user")
