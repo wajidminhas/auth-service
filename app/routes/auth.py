@@ -1,9 +1,12 @@
 # app/routes/auth.py
 
 import logging
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlmodel import Session
+from app.database import get_db
+from app.schemas.user import RefreshTokenRequest
+from app.services.auth import AuthService
 
 from app.database import get_db
 from app.schemas.user import (
@@ -121,4 +124,29 @@ def deactivate_route(
         current_user=current_user,
         token=credentials.credentials,
         db=db
+    )
+    
+    
+@router.post("/refresh", response_model=TokenResponse)
+async def refresh_tokens(
+    payload: RefreshTokenRequest,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    client_ip = request.client.host if request.client else None
+    user_agent = request.headers.get("user-agent")
+    
+    user_id, new_refresh_token = await AuthService.refresh_tokens(
+        raw_token=payload.refresh_token,
+        db=db,
+        ip_address=client_ip,
+        user_agent=user_agent
+    )
+    
+    access_token = AuthService.create_access_token_for_user(user_id)
+    
+    return TokenResponse(
+        access_token=access_token,
+        refresh_token=new_refresh_token,
+        expires_in=30 * 60
     )

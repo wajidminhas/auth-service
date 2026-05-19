@@ -2,13 +2,17 @@
 
 import logging
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, HTTPException
+import uuid
 
 from app.database import create_db_and_tables
 from app.routes.auth import router
 from app.services.kafka import KafkaEventProducer
 from app.services.redis import RedisClient
 from app.core.config import settings
+from starlette.middleware.base import BaseHTTPMiddleware
+from app.core.logging import setup_logging
+
 
 logging.basicConfig(
     level=logging.INFO,
@@ -16,7 +20,10 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S"
 )
 
-logger = logging.getLogger(__name__)
+
+
+
+
 
 
 @asynccontextmanager
@@ -41,6 +48,34 @@ app = FastAPI(
     redoc_url="/redoc",
     lifespan=lifespan
 )
+
+# ─── INSERT NEW: Logging Setup ───────────────────────────────────
+setup_logging()
+
+# ─── INSERT NEW: Request ID Middleware ───────────────────────────
+class RequestIdMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        request.state.request_id = str(uuid.uuid4())
+        response = await call_next(request)
+        response.headers["X-Request-Id"] = request.state.request_id
+        return response
+
+app.add_middleware(RequestIdMiddleware)
+
+
+logger = logging.getLogger(__name__)
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    # ← Existing handler logic (if any) should be merged here
+    ...
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    # ← Existing handler logic (if any) should be merged here
+    ...
+
 
 app.include_router(router)
 

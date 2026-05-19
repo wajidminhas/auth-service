@@ -4,7 +4,7 @@ from typing import Optional
 from datetime import datetime, timezone
 from sqlmodel import Field, SQLModel, Relationship
 import uuid
-from .user import User
+from app.models.user import User
 
 class RefreshToken(SQLModel, table=True):
     __tablename__ = "refresh_tokens"

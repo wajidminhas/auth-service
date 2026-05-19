@@ -3,7 +3,7 @@
 from typing import Optional
 from datetime import datetime, timezone
 from sqlmodel import Field, SQLModel, Relationship
-from .refresh_token import RefreshToken
+from app.models.refresh_token import RefreshToken
 
 
 class User(SQLModel, table=True):
