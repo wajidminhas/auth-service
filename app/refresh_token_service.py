@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime, timezone
 from sqlmodel import Session, select
-from models.refresh_token import RefreshToken
+from app.models.refresh_token import RefreshToken
 from app.core.security import (
     generate_refresh_token,
     hash_refresh_token,

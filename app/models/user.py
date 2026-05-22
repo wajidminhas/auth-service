@@ -1,9 +1,9 @@
 # app/models/user.py
 
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 from datetime import datetime, timezone
 from sqlmodel import Field, SQLModel, Relationship
-from app.models.refresh_token import RefreshToken
+# from app.models.refresh_token import RefreshToken
 
 
 class User(SQLModel, table=True):
@@ -33,5 +33,9 @@ class User(SQLModel, table=True):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: Optional[datetime] = Field(default=None)
     
-    
     refresh_tokens: list["RefreshToken"] = Relationship(back_populates="user")
+    
+    
+    # refresh_tokens: list["RefreshToken"] = Relationship(back_populates="user")
+    if TYPE_CHECKING:
+        from app.models.refresh_token import RefreshToken

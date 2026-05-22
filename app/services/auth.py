@@ -8,6 +8,7 @@ from fastapi import HTTPException, status
 from jose import jwt
 
 from app.models.user import User
+from app.refresh_token_service import RefreshTokenService
 from app.schemas.user import (
     UserRegister, UserLogin, TokenResponse,
     ChangePasswordRequest, ForgotPasswordRequest,
@@ -348,3 +349,29 @@ def deactivate_account(
     logger.info(f"Account deactivated: {current_user.email}")
     publish_user_deactivated(current_user.id, current_user.email)
     return {"message": "Account deactivated successfully"}
+
+
+class AuthService:
+    """Facade that coordinates JWT and Refresh Token services."""
+
+    @staticmethod
+    async def refresh_tokens(
+        raw_token: str,
+        db: Session,
+        ip_address: str | None = None,
+        user_agent: str | None = None
+    ) -> tuple[int, str]:
+        """Delegates validation/rotation to RefreshTokenService."""
+        return await RefreshTokenService.validate_and_rotate(
+            raw_token=raw_token,
+            db=db,
+            ip_address=ip_address,
+            user_agent=user_agent
+        )
+    @staticmethod
+    def create_access_token_for_user(user_id: int) -> str:
+        """Generates a short-lived JWT for the authenticated user."""
+        return create_access_token(
+            data={"sub": str(user_id)},
+            expires_delta=settings.access_token_expire_delta
+        )

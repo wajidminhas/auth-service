@@ -5,8 +5,10 @@ from fastapi import APIRouter, Depends, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlmodel import Session
 from app.database import get_db
-from app.schemas.user import RefreshTokenRequest
+# from app.schemas.user import RefreshTokenRequest
+from app.schemas.refresh_token import RefreshTokenRequest, TokenResponse
 from app.services.auth import AuthService
+
 
 from app.database import get_db
 from app.schemas.user import (

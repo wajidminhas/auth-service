@@ -5,6 +5,7 @@ from datetime import datetime
 from sqlmodel import SQLModel
 
 
+
 class UserRegister(SQLModel):
     """Registration request payload."""
     username: str
