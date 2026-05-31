@@ -2,9 +2,9 @@
 
 services:
 
-  db:
+  auth-db:
     image: postgres:15-alpine
-    container_name: auth_db
+    container_name: auth_db_container
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -75,7 +75,7 @@ services:
     build: .
     container_name: auth_service
     depends_on:
-      db:
+      auth-db:
         condition: service_healthy
       kafka:
         condition: service_healthy
@@ -92,6 +92,10 @@ services:
       OTP_EXPIRE_MINUTES: ${OTP_EXPIRE_MINUTES}
       KAFKA_TOPIC: ${KAFKA_TOPIC}
       APP_NAME: ${APP_NAME}
+      TOKEN_PEPPER: ${TOKEN_PEPPER}
+      REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS}
+      ENABLE_TOKEN_REUSE_DETECTION: ${ENABLE_TOKEN_REUSE_DETECTION}
+      REVOKE_FAMILY_ON_REUSE: ${REVOKE_FAMILY_ON_REUSE}
     networks:
       - auth_network
     restart: on-failure

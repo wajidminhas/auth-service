@@ -3,6 +3,7 @@
 import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, HTTPException
+from fastapi.responses import JSONResponse
 import uuid
 
 from app.database import create_db_and_tables
@@ -56,9 +57,9 @@ setup_logging()
 class RequestIdMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         request.state.request_id = str(uuid.uuid4())
-        response = await call_next(request)
+        response = await call_next(request)  # ← Await and capture
         response.headers["X-Request-Id"] = request.state.request_id
-        return response
+        return response  # ← MUST return the response object
 
 app.add_middleware(RequestIdMiddleware)
 
@@ -68,13 +69,36 @@ logger = logging.getLogger(__name__)
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
-    # ← Existing handler logic (if any) should be merged here
-    ...
+    level = logging.WARNING if exc.status_code < 500 else logging.ERROR
+    logger.log(
+        level,
+        f"HTTP {exc.status_code} | {request.method} {request.url.path}",
+        extra={
+            "request_id": getattr(request.state, "request_id", None),
+            "status_code": exc.status_code,
+            "error_detail": exc.detail
+        }
+    )
+    return JSONResponse(  # ← MUST return JSONResponse, never None
+        status_code=exc.status_code,
+        content={"error": exc.detail}
+    )
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    # ← Existing handler logic (if any) should be merged here
-    ...
+    logger.error(
+        "Unhandled server error",
+        exc_info=exc,
+        extra={
+            "request_id": getattr(request.state, "request_id", None),
+            "path": request.url.path,
+            "method": request.method
+        }
+    )
+    return JSONResponse(  # ← MUST return JSONResponse, never None
+        status_code=500,
+        content={"error": "internal_server_error"}
+    )
 
 
 app.include_router(router)

@@ -1,14 +1,15 @@
 # tests/test_refresh_rotation.py
 import pytest
-from unittest.mock import patch, AsyncMock, MagicMock
+from unittest.mock import patch, AsyncMock
 from fastapi.testclient import TestClient
 from app.main import app
-from app.services.auth import AuthService
+from app.services.auth import AuthService  # Import for patch.object
 
 @pytest.fixture
 def client():
     return TestClient(app)
 
+# ✅ Plain class - NO inheritance from BaseModel
 class TestRefreshTokenRotation:
     """Test suite for /auth/refresh endpoint."""
 
@@ -18,7 +19,6 @@ class TestRefreshTokenRotation:
         self, mock_create, mock_refresh, client
     ):
         """Valid refresh token should return new access + refresh pair."""
-        # Configure mocks to return expected values
         mock_refresh.return_value = (123, "new_refresh_token_xyz")
         mock_create.return_value = "new_access_token_abc"
         
@@ -27,20 +27,18 @@ class TestRefreshTokenRotation:
             json={"refresh_token": "valid_old_token"},
             headers={"Content-Type": "application/json"}
         )
+        # DEBUG: Print full response for inspection
+        print(f"\n=== RESPONSE STATUS: {response.status_code} ===")
+        print(f"=== RESPONSE BODY: {response.json()} ===")
+        print(f"=== RESPONSE KEYS: {list(response.json().keys())} ===\n")
         
-        # Assert status code
+        
+        
         assert response.status_code == 200, f"Expected 200, got {response.status_code}. Body: {response.json()}"
-        
         data = response.json()
-        
-        # Assert ONLY fields that your API actually returns
         assert data["access_token"] == "new_access_token_abc"
-        assert data["token_type"] == "bearer"
-        
-        # Temporarily skip these if they're not in the response yet
-        # Uncomment once you confirm the route returns them:
-        # assert data.get("refresh_token") == "new_refresh_token_xyz"
-        # assert data.get("expires_in") == 1800
+        assert data["refresh_token"] == "new_refresh_token_xyz"
+        assert data["expires_in"] == 30 * 60
 
     @patch.object(AuthService, 'refresh_tokens', new_callable=AsyncMock)
     def test_refresh_with_invalid_token_returns_401(self, mock_refresh, client):
