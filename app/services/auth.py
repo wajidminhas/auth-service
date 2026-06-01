@@ -3,10 +3,12 @@
 import secrets
 import logging
 from datetime import datetime, timedelta, timezone
+from fastapi.security import OAuth2PasswordBearer
 from sqlmodel import Session, select
-from fastapi import HTTPException, status
+from fastapi import Depends, HTTPException, status
 from jose import jwt
 
+from app.database import get_db
 from app.models.user import User
 from app.refresh_token_service import RefreshTokenService
 from app.schemas.user import (
@@ -29,6 +31,10 @@ from app.services.kafka import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
+
 
 
 # ─── Helpers ──────────────────────────────────────────────────────
@@ -126,35 +132,37 @@ def login_user(user_data: UserLogin, db: Session) -> TokenResponse:
 
 # ─── Get Current User ─────────────────────────────────────────────
 
-def get_current_user(token: str, db: Session) -> User:
-    """
-    Validate JWT token and return authenticated user.
-
-    Raises:
-        401: Token invalid, expired or blacklisted
-        403: Account deactivated
-    """
+def get_current_user(
+    token: str = Depends(oauth2_scheme),  # ← pulls Bearer token from request
+    db: Session = Depends(get_db)    # ← injects DB session
+) -> User:
     if is_token_blacklisted(token):
         raise HTTPException(
-            status.HTTP_401_UNAUTHORIZED,
-            "Token invalidated — please login again",
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token invalidated — please login again",
             headers={"WWW-Authenticate": "Bearer"}
         )
 
     email = decode_access_token(token)
     if not email:
         raise HTTPException(
-            status.HTTP_401_UNAUTHORIZED,
-            "Invalid or expired token",
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
             headers={"WWW-Authenticate": "Bearer"}
         )
 
     user = get_user_by_email(email, db)
     if not user:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "User not found")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found"
+        )
 
     if not user.is_active:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Account is deactivated")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account is deactivated"
+        )
 
     return user
 
