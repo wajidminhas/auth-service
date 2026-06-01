@@ -3,6 +3,7 @@
 from typing import Optional
 from datetime import datetime
 from sqlmodel import SQLModel
+from pydantic import BaseModel, ConfigDict  
 
 
 
@@ -19,7 +20,7 @@ class UserLogin(SQLModel):
     password: str
 
 
-class UserResponse(SQLModel):
+class UserResponse(BaseModel):
     """Public user profile — never exposes password."""
     id: int
     username: str
@@ -28,6 +29,8 @@ class UserResponse(SQLModel):
     phone_number: Optional[str] = None
     is_active: bool
     created_at: datetime
+    
+    model_config = ConfigDict(from_attributes=True)
 
 
 class TokenResponse(SQLModel):
@@ -66,3 +69,4 @@ class UpdateProfileRequest(SQLModel):
     username: Optional[str] = None
     full_name: Optional[str] = None
     phone_number: Optional[str] = None
+    
