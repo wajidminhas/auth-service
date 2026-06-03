@@ -1,0 +1,87 @@
+
+
+name: CI/CD
+
+on:
+  push:
+    branches: [development, main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install ruff
+        run: pip install ruff
+
+      - name: Run linter
+        run: ruff check app/
+
+  test:
+    runs-on: ubuntu-latest
+    needs: lint  # only runs if linting passes
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        run: curl -LsSf https://astral.sh/uv/install.sh | sh
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Run tests
+        run: uv run pytest -v
+        env:
+          DATABASE_URL: sqlite://
+          SECRET_KEY: test_secret_key
+          ALGORITHM: HS256
+          ACCESS_TOKEN_EXPIRE_MINUTES: 30
+          REFRESH_TOKEN_EXPIRE_DAYS: 7
+          TOKEN_PEPPER: test_pepper
+          KAFKA_BOOTSTRAP_SERVERS: localhost:9092
+          KAFKA_TOPIC: auth_events
+          APP_NAME: auth-service
+          OTP_EXPIRE_MINUTES: 5
+          ENABLE_TOKEN_REUSE_DETECTION: "true"
+          REVOKE_FAMILY_ON_REUSE: "true"
+
+  docker:
+    runs-on: ubuntu-latest
+    needs: test  # only runs if tests pass
+    if: github.ref == 'refs/heads/main'  # only on main branch
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/auth-service:latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/auth-service:${{ github.sha }}
